@@ -8,6 +8,8 @@ Personal Claude Code skills for reuse across machines.
 |-------|-------------|
 | `trivy-cve-scan` | Check Dockerfile (create if missing), build Docker image, run Trivy CVE scan |
 | `frontend` | React 18+/19 + TypeScript best practices guide |
+| `code-audit` | Staff Engineer's Audit Framework (V2) — 5-pillar React/TS code review |
+| `feature-modularization-protocol` | UFMP v3 — modularize complex React/TS features into scalable structures |
 
 ## Install on a new machine
 
