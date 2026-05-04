@@ -1,0 +1,18 @@
+{
+  "character": "knight",
+  "cell_size": 64,
+  "scope": "walk-only",
+  "atlas_size": { "width": 384, "height": 512 },
+  "rows": 8,
+  "columns": 6,
+  "chroma_key": "#00ff00",
+  "direction_order": ["south", "south-east", "east", "north-east", "north", "north-west", "west", "south-west"],
+  "animations": {
+    "walk": { "frames": 6, "rows": 8 }
+  },
+  "palette": {
+    "armor_body": "#1a2a4a",
+    "armor_highlight": "#2a4a7a",
+    "silver_trim": "#8899aa"
+  }
+}

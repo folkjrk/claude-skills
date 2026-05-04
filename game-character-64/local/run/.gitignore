@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Generated pipeline outputs
+generated/
+final/
+qa/
+
+# Environment / secrets
+.env
+*.env

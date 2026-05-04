@@ -1,0 +1,5 @@
+pixel art, 16-bit RPG game sprite, human knight character, full body, south-facing idle pose.
+dark navy blue (#1a2a4a) plate armor, silver trim, closed rectangular visor helmet, longsword held at side.
+pure flat #00ff00 chroma-key background, no shadows, no floor, no gradients.
+centered character, hard pixel edges, 32-color palette, crisp sprite art style.
+top-down RPG perspective, SNES style, game-ready sprite, retro video game art.

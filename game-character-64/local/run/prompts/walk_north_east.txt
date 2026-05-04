@@ -1,0 +1,6 @@
+pixel art, 16-bit RPG game sprite animation strip, one row of 6 frames side by side.
+human knight walking north-east direction, walk cycle animation.
+dark navy blue plate armor, silver trim, closed visor helmet, longsword at side.
+pure flat #00ff00 chroma-key background, no shadows, no floor, no gradients.
+hard pixel edges, 32-color palette, crisp SNES-style sprite art, retro video game.
+consistent character identity across all 6 frames, same colors and proportions.
