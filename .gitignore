@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Local skill overrides
+*/local/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Env
+.env
+.env.*
