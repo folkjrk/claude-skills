@@ -401,6 +401,7 @@ scaffold_dirs() {
   local dirs=(
     "app/routes"
     "app/components/__tests__"
+    "app/features"
     "app/hooks"
     "app/stores"
     "app/api"
@@ -437,6 +438,16 @@ EOF
   else
     print_success "  .env  (already exists, skipped)"
   fi
+
+  # vite-env.d.ts
+  scaffold_file "vite-env.d.ts" <<'EOF'
+/// <reference types="vite/client" />
+
+declare module "*.svg?react" {
+  const ReactComponent: React.FunctionComponent<React.SVGProps<SVGSVGElement>>;
+  export default ReactComponent;
+}
+EOF
 
   # vite.config.ts
   scaffold_file "vite.config.ts" <<'EOF'
@@ -670,6 +681,13 @@ EOF
 scaffold_source_files() {
   print_header "Creating source files"
 
+  # app/routes.ts
+  scaffold_file "app/routes.ts" <<'EOF'
+import { flatRoutes } from "@react-router/fs-routes";
+
+export default flatRoutes();
+EOF
+
   # app/config.ts
   scaffold_file "app/config.ts" <<'EOF'
 import isClient from "@/hooks/isClient";
@@ -867,6 +885,165 @@ export default function isClient(): boolean {
 }
 EOF
 
+  # app/hooks/useNativeFetch.ts
+  scaffold_file "app/hooks/useNativeFetch.ts" <<'EOF'
+import { useCallback, useMemo } from "react";
+import getConfig from "@/config";
+import type { ApiResponse } from "@/types";
+
+// ─── ApiError ────────────────────────────────────────────────────────────────
+export class ApiError extends Error {
+  status: number;
+  body: unknown;
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+// ─── Options ─────────────────────────────────────────────────────────────────
+type Method = "GET" | "POST" | "PUT" | "DELETE";
+
+type RequestOptions = {
+  signal?:  AbortSignal;
+  timeout?: number;   // ms, default 15_000
+  retries?: number;   // default 2 (i.e. up to 3 attempts)
+  headers?: Record<string, string>;
+};
+
+const DEFAULT_TIMEOUT = 15_000;
+const DEFAULT_RETRIES = 2;
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+function joinUrl(base: string, path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const b = (base || "").replace(/\/+$/, "");
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${b}${p}`;
+}
+
+async function parseBody(res: Response): Promise<unknown> {
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json"))         return res.json();
+  if (ct.startsWith("application/octet-stream")
+   || ct.startsWith("image/")
+   || ct.startsWith("application/pdf"))        return res.blob();
+  return res.text();
+}
+
+async function doFetch<T>(
+  method: Method,
+  url:    string,
+  body:   unknown | undefined,
+  opts:   RequestOptions,
+): Promise<ApiResponse<T>> {
+  const timeout = opts.timeout ?? DEFAULT_TIMEOUT;
+  const retries = opts.retries ?? DEFAULT_RETRIES;
+
+  let attempt = 0;
+  let lastErr: unknown;
+
+  while (attempt <= retries) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    // chain external signal → internal controller
+    const onExternalAbort = () => controller.abort();
+    if (opts.signal) {
+      if (opts.signal.aborted) controller.abort();
+      else opts.signal.addEventListener("abort", onExternalAbort);
+    }
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          ...(opts.headers || {}),
+        },
+        body:        body !== undefined ? JSON.stringify(body) : undefined,
+        credentials: "include",
+        signal:      controller.signal,
+      });
+
+      clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", onExternalAbort);
+
+      const parsed = await parseBody(res);
+
+      if (!res.ok) {
+        if (RETRYABLE_STATUS.has(res.status) && attempt < retries) {
+          attempt++;
+          lastErr = new ApiError(res.statusText, res.status, parsed);
+          continue;
+        }
+        throw new ApiError(res.statusText || `HTTP ${res.status}`, res.status, parsed);
+      }
+
+      // If server already returns { success, data, ... } shape, pass through.
+      if (parsed && typeof parsed === "object" && "success" in (parsed as object)) {
+        return parsed as ApiResponse<T>;
+      }
+      return { success: true, data: parsed as T };
+    } catch (err: unknown) {
+      clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", onExternalAbort);
+
+      // External abort → propagate immediately, do not retry
+      if (opts.signal?.aborted) throw err;
+
+      const isAbort = (err as { name?: string })?.name === "AbortError";
+      const retryable = isAbort || !(err instanceof ApiError);
+
+      if (retryable && attempt < retries) {
+        attempt++;
+        lastErr = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastErr instanceof Error ? lastErr : new Error("Request failed");
+}
+
+// ─── Hook ────────────────────────────────────────────────────────────────────
+export function useNativeFetch() {
+  const baseUrl = useMemo(() => (getConfig().ApiUrl as string) || "", []);
+
+  const request = useCallback(
+    <T,>(method: Method, path: string, body?: unknown, opts: RequestOptions = {}) =>
+      doFetch<T>(method, joinUrl(baseUrl, path), body, opts),
+    [baseUrl],
+  );
+
+  return useMemo(
+    () => ({
+      get:  <T,>(path: string,                opts?: RequestOptions) => request<T>("GET",    path, undefined, opts),
+      post: <T,>(path: string, body?: unknown, opts?: RequestOptions) => request<T>("POST",   path, body,      opts),
+      put:  <T,>(path: string, body?: unknown, opts?: RequestOptions) => request<T>("PUT",    path, body,      opts),
+      del:  <T,>(path: string,                opts?: RequestOptions) => request<T>("DELETE", path, undefined, opts),
+      /**
+       * Returns a `{ promise, cancel }` pair. Call `cancel()` to abort.
+       */
+      cancellable: <T,>(path: string, init?: { method?: Method; body?: unknown; opts?: RequestOptions }) => {
+        const controller = new AbortController();
+        const promise = request<T>(
+          init?.method ?? "GET",
+          path,
+          init?.body,
+          { ...(init?.opts || {}), signal: controller.signal },
+        );
+        return { promise, cancel: () => controller.abort() };
+      },
+    }),
+    [request],
+  );
+}
+EOF
+
   # app/routes/_index.tsx
   scaffold_file "app/routes/_index.tsx" <<'EOF'
 import { Outlet } from "react-router";
@@ -969,6 +1146,90 @@ export default function ErrorPage() {
 }
 EOF
 
+  # app/provider/query.tsx
+  scaffold_file "app/provider/query.tsx" <<'EOF'
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { type ReactNode } from "react";
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 1000 * 60,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+export function QueryProvider({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  );
+}
+EOF
+
+  # app/api/example.tsx (TanStack Query pattern)
+  scaffold_file "app/api/example.tsx" <<'EOF'
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNativeFetch } from "@/hooks/useNativeFetch";
+
+// ─── Query keys ───────────────────────────────────────────────────────────────
+export const exampleKeys = {
+  all:    () => ["example"] as const,
+  list:   (params: unknown) => ["example", "list", params] as const,
+  detail: (id: string) => ["example", "detail", id] as const,
+};
+
+// ─── Hooks ────────────────────────────────────────────────────────────────────
+export function useGetExampleList(params: unknown) {
+  const fetch = useNativeFetch();
+  return useQuery({
+    queryKey: exampleKeys.list(params),
+    queryFn:  () => fetch.post("/example/search", params),
+  });
+}
+
+export function useGetExampleById(id: string) {
+  const fetch = useNativeFetch();
+  return useQuery({
+    queryKey: exampleKeys.detail(id),
+    queryFn:  () => fetch.get(`/example/${id}`),
+    enabled:  !!id,
+  });
+}
+
+export function useCreateExample() {
+  const fetch  = useNativeFetch();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: unknown) => fetch.post("/example", payload),
+    onSuccess:  () => client.invalidateQueries({ queryKey: exampleKeys.all() }),
+  });
+}
+
+export function useUpdateExample(id: string) {
+  const fetch  = useNativeFetch();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: unknown) => fetch.put(`/example/${id}`, payload),
+    onSuccess:  () => client.invalidateQueries({ queryKey: exampleKeys.all() }),
+  });
+}
+
+export function useDeleteExample() {
+  const fetch  = useNativeFetch();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetch.del(`/example/${id}`),
+    onSuccess:  () => client.invalidateQueries({ queryKey: exampleKeys.all() }),
+  });
+}
+EOF
+
   # app/root.tsx
   scaffold_file "app/root.tsx" <<'EOF'
 import type { LinksFunction, LoaderFunctionArgs } from "react-router";
@@ -987,6 +1248,7 @@ import { Provider as ReduxProvider } from "react-redux";
 import { I18nextProvider } from "react-i18next";
 import { store } from "@/stores";
 import i18n from "@/i18n";
+import { QueryProvider } from "@/provider/query";
 import { AlertProvider } from "@/provider/alert";
 import { ToastProvider } from "@/provider/toast";
 import { SSEProvider } from "@/provider/sse";
@@ -1032,17 +1294,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body className="bg-background-50 text-gray-900" suppressHydrationWarning>
         <ReduxProvider store={store}>
-          <AlertProvider>
-            <ToastProvider>
-              <I18nextProvider i18n={i18n}>
-                <SSEProvider>
-                  <Auth>
-                    {children}
-                  </Auth>
-                </SSEProvider>
-              </I18nextProvider>
-            </ToastProvider>
-          </AlertProvider>
+          <QueryProvider>
+            <AlertProvider>
+              <ToastProvider>
+                <I18nextProvider i18n={i18n}>
+                  <SSEProvider>
+                    <Auth>
+                      {children}
+                    </Auth>
+                  </SSEProvider>
+                </I18nextProvider>
+              </ToastProvider>
+            </AlertProvider>
+          </QueryProvider>
         </ReduxProvider>
         <ScrollRestoration />
         <Scripts />
@@ -1222,6 +1486,9 @@ EOF
 // }
 EOF
   print_success "  $dir/$name.hooks.ts"
+
+  # [feature].context.tsx (not created by default — only when prop-drilling > 3 levels)
+  # To add manually: app/features/<name>/<name>.context.tsx
 
   # index.ts
   cat > "$dir/index.ts" <<EOF

@@ -39,7 +39,9 @@ app/
 
 ---
 
-## Feature Module Structure (UFMP)
+## Feature Module Structure
+
+> Inspired by [Feature-Sliced Design (FSD)](https://feature-sliced.design) — simplified for this project's scale.
 
 Every feature lives under `app/features/[feature-name]/` and follows this layout:
 
@@ -51,6 +53,7 @@ app/features/[feature-name]/
 ├── [feature-name].service.ts      # API re-exports or DTO mappers
 ├── [feature-name].utils.ts        # Pure functions, mappers, formatters
 ├── [feature-name].hooks.ts        # Feature-specific custom hooks
+├── [feature-name].context.tsx     # (optional) Local context — only when prop-drilling > 3 levels
 ├── components/                    # Presentational UI components
 └── __tests__/                     # Unit + integration tests
 ```
@@ -127,6 +130,12 @@ return {
   handlers:   { handleSearch, goToNextPage, openDialog },
 }
 ```
+
+### `[feature].context.tsx` — Local feature context (optional)
+- Create **only** when prop-drilling within the feature exceeds 3 levels deep.
+- Scope is strictly within the feature — never consumed by other features.
+- Split into separate contexts if read-state and write-state update at different frequencies.
+- Not required for most features; default to passing props from hooks instead.
 
 ### `components/` — Presentational components
 - PascalCase filenames matching the exported component name.

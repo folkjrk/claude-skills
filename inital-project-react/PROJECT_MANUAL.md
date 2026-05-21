@@ -2,6 +2,8 @@
 
 A reference guide for replicating the architecture and structure of this project.
 
+> **Architecture reference:** Feature module structure is a simplified adaptation of [Feature-Sliced Design (FSD)](https://feature-sliced.design) — a community-driven architectural methodology for frontend projects. Each feature is a self-contained vertical slice with strict layer boundaries (`config → schema → service → utils → hooks → components`), a single public API (`index.ts`), and no cross-feature internal imports.
+
 ---
 
 ## Table of Contents
@@ -14,15 +16,17 @@ A reference guide for replicating the architecture and structure of this project
 6. [Routing](#6-routing)
 7. [State Management (Redux)](#7-state-management-redux)
 8. [API Layer](#8-api-layer)
-9. [Internationalization (i18n)](#9-internationalization-i18n)
-10. [Form Handling](#10-form-handling)
-11. [Authentication & Authorization](#11-authentication--authorization)
-12. [Styling](#12-styling)
-13. [Custom Hooks](#13-custom-hooks)
-14. [Component Patterns](#14-component-patterns)
-15. [Real-time (SSE)](#15-real-time-sse)
-16. [Testing](#16-testing)
-17. [Key Conventions](#17-key-conventions)
+9. [TanStack Query (Server State)](#8b-tanstack-query-server-state)
+10. [Feature Context (optional)](#8c-feature-context-optional)
+11. [Internationalization (i18n)](#9-internationalization-i18n)
+12. [Form Handling](#10-form-handling)
+13. [Authentication & Authorization](#11-authentication--authorization)
+14. [Styling](#12-styling)
+15. [Custom Hooks](#13-custom-hooks)
+16. [Component Patterns](#14-component-patterns)
+17. [Real-time (SSE)](#15-real-time-sse)
+18. [Testing](#16-testing)
+19. [Key Conventions](#17-key-conventions)
 
 ---
 
@@ -38,6 +42,8 @@ A reference guide for replicating the architecture and structure of this project
 | UI                | react + react-dom                                  | ^19.1.0           |
 | Language          | typescript                                         | ^5.8.3            |
 | Build             | vite                                               | ^6.3.3            |
+| Server State      | @tanstack/react-query + devtools                   | ^5.95.2 / ^5.99.2 |
+| Virtualisation    | @tanstack/react-virtual                            | ^3.13.23          |
 | State             | @reduxjs/toolkit + react-redux                     | ^2.8.2 / ^9.2.0   |
 | Forms             | react-hook-form                                    | ^7.62.0           |
 | Form Resolvers    | @hookform/resolvers                                | ^5.2.1            |
@@ -83,6 +89,7 @@ A reference guide for replicating the architecture and structure of this project
 │   ├── provider/                # React context providers
 │   ├── data/                    # Static data files
 │   ├── assets/                  # SVGs and images
+│   ├── routes.ts                # Flat routes config — flatRoutes() from @react-router/fs-routes
 │   ├── root.tsx                 # Root layout: providers, navbar, sidebar
 │   ├── app.css                  # Global CSS
 │   ├── types.ts                 # Global TypeScript types
@@ -93,7 +100,7 @@ A reference guide for replicating the architecture and structure of this project
 ├── types/                       # Ambient/global type declarations
 ├── __mocks__/                   # Jest module mocks
 ├── vite.config.ts
-├── vite-env.d.ts           # Vite client types + SVG?react module declaration
+├── vite-env.d.ts            # Vite client types + SVG?react module declaration
 ├── react-router.config.ts
 ├── tailwind.config.ts
 ├── tsconfig.json
@@ -813,6 +820,133 @@ type SearchPayloadType = {
 
 ---
 
+## 8b. TanStack Query (Server State)
+
+### Provider (`app/provider/query.tsx`)
+
+```ts
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { type ReactNode } from "react";
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 1000 * 60,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+export function QueryProvider({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  );
+}
+```
+
+Wrap in `root.tsx` Layout **inside** `ReduxProvider`:
+
+```tsx
+<ReduxProvider store={store}>
+  <QueryProvider>
+    ...
+  </QueryProvider>
+</ReduxProvider>
+```
+
+### API modules (`app/api/[domain].tsx`)
+
+Use `useQuery` for reads, `useMutation` for writes. Always define query keys as const factories:
+
+```ts
+export const exampleKeys = {
+  all:    () => ["example"] as const,
+  list:   (params: unknown) => ["example", "list", params] as const,
+  detail: (id: string) => ["example", "detail", id] as const,
+};
+
+export function useGetExampleList(params: unknown) {
+  const fetch = useNativeFetch();
+  return useQuery({
+    queryKey: exampleKeys.list(params),
+    queryFn:  () => fetch.post("/example/search", params),
+  });
+}
+
+export function useCreateExample() {
+  const fetch  = useNativeFetch();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: unknown) => fetch.post("/example", payload),
+    onSuccess:  () => client.invalidateQueries({ queryKey: exampleKeys.all() }),
+  });
+}
+```
+
+### Virtualisation (`@tanstack/react-virtual`)
+
+For long lists, use `useVirtualizer`:
+
+```tsx
+import { useVirtualizer } from "@tanstack/react-virtual";
+
+const rowVirtualizer = useVirtualizer({
+  count:           rows.length,
+  getScrollElement: () => tableBodyRef.current,
+  estimateSize:    () => 48,
+  overscan:        10,
+});
+```
+
+- Attach `tableBodyRef` to the scroll container
+- Use `overscan: 10` as default
+- Render only `rowVirtualizer.getVirtualItems()` inside the scroll container
+
+---
+
+## 8c. Feature Context (optional)
+
+Use `[feature].context.tsx` only when prop-drilling **within the same feature** exceeds 3 levels deep. Most features do not need this — default to passing props from hooks.
+
+```tsx
+// [feature].context.tsx
+import { createContext, useContext, type ReactNode } from "react"
+
+type FeatureContextValue = {
+  selectedId: string | null
+  setSelectedId: (id: string | null) => void
+}
+
+const FeatureContext = createContext<FeatureContextValue | null>(null)
+
+export function FeatureProvider({ children }: { children: ReactNode }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  return (
+    <FeatureContext.Provider value={{ selectedId, setSelectedId }}>
+      {children}
+    </FeatureContext.Provider>
+  )
+}
+
+export function useFeatureContext() {
+  const ctx = useContext(FeatureContext)
+  if (!ctx) throw new Error("useFeatureContext must be used within FeatureProvider")
+  return ctx
+}
+```
+
+**Rules:**
+- Scope is strictly **within the feature** — never consumed by other features
+- Split into separate contexts if read-state and write-state update at different frequencies
+- Do **not** export the context value type or provider via `index.ts` unless other features genuinely need it
+
+---
+
 ## 9. Internationalization (i18n)
 
 ### Setup (`app/i18n/index.ts`)
@@ -1114,28 +1248,27 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
 
 ### Feature Component (page-level)
 
+Route components should consume hooks from the feature module — no direct API calls:
+
 ```tsx
 // routes/example._index.tsx
+import { useExampleTable } from "@/features/example";
+
 export default function ExamplePage() {
   const { t } = useI18n();
-  const api = useExampleApi();
-  const { read, create } = usePermission("example");
-
-  const [data, setData] = useState<ExampleType[]>([]);
-  const { sortBy, sortOrder, handleSort } = useTableSort();
-
-  useEffect(() => {
-    api.fetchAll({ page: 1, perPage: 20, sortBy, sortOrder }).then((res) => {
-      if (res.success) setData(res.data);
-    });
-  }, [sortBy, sortOrder]);
+  const { read } = usePermission("example");
+  const { data, state, filters, pagination, handlers } = useExampleTable();
 
   if (!read) return <Navigate to="/" replace />;
 
   return (
     <div>
       <h1>{t("example.title")}</h1>
-      <Table data={data} onSort={handleSort} />
+      <ExampleTable
+        rows={data.rows}
+        isPending={state.isPending}
+        onSearch={handlers.handleSearch}
+      />
     </div>
   );
 }
@@ -1413,7 +1546,7 @@ formatDateTime(date); // "DD/MM/YYYY HH:mm:ss"
 
 ### Config files to copy / create
 
-- [ ] `package.json` — copy dependencies and devDependencies, update name
+- [ ] `package.json` — copy dependencies and devDependencies, update name; include `@tanstack/react-query`, `@tanstack/react-query-devtools`, `@tanstack/react-virtual`
 - [ ] `vite.config.ts` — plugins: `tailwindcss`, `reactRouter`, `tsconfigPaths`, `svgr`; port 3000
 - [ ] `react-router.config.ts` — set `ssr: true`
 - [ ] `tailwind.config.ts` — content glob, custom colors, fonts, spacing
@@ -1439,7 +1572,7 @@ formatDateTime(date); // "DD/MM/YYYY HH:mm:ss"
 - [ ] `app/constants.tsx` — column widths, status enums, per-page options
 - [ ] `app/field-lengths.ts` — max char lengths per field
 - [ ] `app/app.css` — global CSS (Tailwind `@import`)
-- [ ] `app/root.tsx` — `Layout` holds all providers (Redux → Alert → Toast → I18n → SSE → Auth wrapping `{children}`); `App` is routing logic only; `window.ENV` injected in `<head>` via `useLoaderData`
+- [ ] `app/root.tsx` — `Layout` holds all providers (Redux → Query → Alert → Toast → I18n → SSE → Auth wrapping `{children}`); `App` is routing logic only; `window.ENV` injected in `<head>` via `useLoaderData`
 - [ ] `app/stores/index.ts` — Redux store with SSR-safe localStorage middleware
 - [ ] `app/stores/auth.ts` — auth slice (setUserInfo, logout)
 - [ ] `app/i18n/index.ts` — i18n init (LanguageDetector, resources, fallbackLng)
@@ -1455,6 +1588,7 @@ formatDateTime(date); // "DD/MM/YYYY HH:mm:ss"
 - [ ] `app/hooks/useDateTime.ts` — live clock (updates every second)
 - [ ] `app/hooks/useLookups.ts` — paginated dropdown options with debounced search
 - [ ] `app/hooks/useMaskedInput.ts` — format input as phone, number, decimal while typing
+- [ ] `app/provider/query.tsx` — `QueryClient` setup + `QueryProvider` wrapping `QueryClientProvider` + `ReactQueryDevtools`
 - [ ] `app/provider/alert.tsx` + `toast.tsx` — global dialog/toast context
 - [ ] `app/provider/sse.tsx` — Server-Sent Events provider
 - [ ] `app/components/auth.tsx` — auth guard, redirects unauthenticated users to `/login`
