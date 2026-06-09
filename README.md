@@ -12,8 +12,8 @@ Personal Claude Code skills for reuse across machines.
 | `audit-react` | Staff Engineer's Audit Framework — long-form reference for React/TS audits |
 | `feature-modularization-protocol` | UFMP v3 — modularize complex React/TS features into scalable structures |
 | `game-character-64` | Generate 64×64 pixel-art character spritesheets (8-direction, idle/walk/attack) for 2D games |
-| `inital-project-react` | Scaffold a React 19 + React Router v7 project (FSD-inspired feature modules, TanStack Query, Virtualisation) with `run.sh` and `CLAUDE.md` |
-| `inital-project-go` | Scaffold a Go 1.22 + Fiber v2 backend (clean architecture: handler → service → repository) with `CLAUDE.md` and `PROJECT_MANUAL.md` |
+| `initial-project-react` | Scaffold a React 19 + React Router v7 project (FSD-inspired feature modules, TanStack Query, Virtualisation) with `run.sh` and `CLAUDE.md` |
+| `initial-project-go` | Scaffold a Go 1.22 + Fiber v2 backend (clean architecture: handler → service → repository) with `CLAUDE.md` and `PROJECT_MANUAL.md` |
 
 ## Install on a new machine
 
@@ -43,6 +43,6 @@ git push
 ```
 /trivy-cve-scan
 /frontend
-/inital-project-react
-/inital-project-go
+/initial-project-react
+/initial-project-go
 ```
