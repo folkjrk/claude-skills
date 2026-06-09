@@ -570,6 +570,30 @@ export default function App() {
 
 The inner app component (e.g. `PharmacyApp`) only holds UI structure (Sidebar, Navbar) — no providers.
 
+### `<ClientOnly>` component (`app/components/client-only.tsx`)
+
+Defers child rendering until after client mount. Required when wrapping protected routes that touch browser-only APIs (window, localStorage, module federation remotes, etc.) so server-rendered HTML and the first client render match.
+
+```tsx
+// app/components/client-only.tsx
+import { useEffect, useState } from "react";
+
+export default function ClientOnly({
+  children,
+  fallback = null,
+}: { children: React.ReactNode; fallback?: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return <div suppressHydrationWarning>{fallback}</div>;
+  return <>{children}</>;
+}
+```
+
+Key points:
+- **`<div suppressHydrationWarning>` wrapper for the fallback** — tells React not to warn on hydration mismatch in this subtree. We *know* the server output (fallback) differs from the post-mount client output (children); the wrapper makes that intentional.
+- Returns `<>{children}</>` (fragment) after mount so the component itself adds no DOM once hydrated.
+- `fallback` should match the layout footprint of `children` (e.g. `<div className="min-h-svh" />`) to avoid layout shift.
+
 ### Built-in routes
 
 | File                      | Path        | Purpose                                                    |
