@@ -15,6 +15,7 @@ Personal Claude Code skills for reuse across machines.
 | `initial-project-react` | Scaffold a React 19 + React Router v7 project (FSD-inspired feature modules, TanStack Query, Virtualisation) with `run.sh` and `CLAUDE.md` |
 | `initial-project-go` | Scaffold a Go 1.22 + Fiber v2 backend (clean architecture: handler → service → repository) with `CLAUDE.md` and `PROJECT_MANUAL.md` |
 | `game-feature-protocol` | Unity/C# adaptation of UFMP — build/refactor game features (combat, enemies, items, dungeon, run loop) with one-way dependencies, ScriptableObject data, and the run/meta loop split |
+| `unity-nodecanvas-fsm` | Hybrid OOP + NodeCanvas architecture — C# "Body" (data/physics/mechanics) + FSM/BT "Brain" (decisions/timing) bridged by Blackboard and thin ActionTask/ConditionTask hooks |
 
 ## Install on a new machine
 
