@@ -268,7 +268,34 @@ If step 2 needs more than ~30 lines, the logic belongs in the Body — move it d
 
 ---
 
-## 6. Spaghetti Smells (reject in review)
+## 6. The Designer Contract
+
+The whole point of this architecture is that a non-coder designer can read and edit graphs
+alone. That only holds if both sides keep the contract:
+
+**Coder side:**
+- **No reflected/built-in low-level tasks in graphs.** NodeCanvas ships "Execute Function",
+  "Get/Set Field", "Send Message" and similar reflection tasks — banned. They turn the graph
+  back into code drawn as boxes, break on rename, and designers can't read them. Every
+  capability a graph needs gets a named custom verb Task instead.
+- **`[Name]` and `[Description]` are the designer's UI.** Write them in plain product
+  language ("Walks the enemy to a spot", not "Invokes locomotion delegate"). No programmer
+  jargon, no class names. Same for Blackboard variable names (`PlayerTransform`, not `tfRef`).
+- **Ship a test scene per feature** where the graph can be run and tweaked in isolation, so
+  the designer can iterate without asking for help.
+
+**Designer side:**
+- Compose flows only from custom verb Tasks (`MyGame/...` categories) + transitions.
+- Need a capability that doesn't exist? **Request a new verb Task from a coder** — never
+  approximate it by wiring low-level/built-in tasks together.
+- Edit graphs and Blackboard values freely; never edit C# or add components to prefabs.
+
+Litmus test: read the graph aloud. If it doesn't sound like a sentence a producer would
+understand ("When the player is in range, chase; on contact, attack"), it's too low-level.
+
+---
+
+## 7. Spaghetti Smells (reject in review)
 
 - A Task doing pathfinding, physics casts, or heavy math → move it into the Body.
 - A Body script with `using NodeCanvas.*` or a serialized graph/Blackboard reference.
@@ -279,14 +306,18 @@ If step 2 needs more than ~30 lines, the logic belongs in the Body — move it d
 - Gameplay behavior inside `IStateCallbackReceiver` callbacks.
 - Code calling into the FSM to force a state instead of `SendEvent` + a graph transition.
 - A giant "do everything" Task instead of small composable verbs.
+- A reflected/built-in low-level task ("Execute Function", "Get/Set Field") in a graph →
+  replace with a named custom verb Task (see §6).
 
 ---
 
-## 7. Definition of Done
+## 8. Definition of Done
 
 - [ ] Body compiles with zero NodeCanvas references; works when called directly.
 - [ ] Every ActionTask reaches `EndAction` on all paths and cleans up in `OnStop`.
 - [ ] All Task inputs are `BBParameter<T>` with `[RequiredField]`/`[BlackboardOnly]` where apt.
 - [ ] Tasks have `[Category]` + `[Description]`; typed agent via `ActionTask<T>`.
+- [ ] `[Name]`/`[Description]` written in plain product language a non-coder understands.
 - [ ] No math/physics in Tasks or graphs — only decisions and Body calls.
+- [ ] No reflected/built-in low-level tasks in any graph — custom verb Tasks only.
 - [ ] Graph reads as a plain-English flowchart a designer can edit without touching code.
