@@ -35,9 +35,28 @@ Task scripts live in the same layer as the feature they command; all dependencie
 4. **One Task = one verb.** `MoveToTarget`, `PlayAttack`, `IsTargetInRange`. Fifty small
    Tasks that designers compose beat five clever ones.
 
+### Who writes the Blackboard?
+
+The Body never touches the Blackboard (rule 1), and graphs don't compute (rule 2) — so
+Blackboard variables get populated exactly two ways:
+
+- **Designer bindings** — scene/prefab references bound in the inspector (`PlayerTransform`).
+- **Sensor Tasks** — thin Tasks that read from a Body component and publish the result to a
+  `[BlackboardOnly]` out-parameter (see template in §3). This is the only place allowed to
+  know both sides. Never solve this with a Body script that references the Blackboard.
+
+### FSM or BT?
+
+- **FSM** — discrete modes where "what state am I in" matters: game flow, boss phases,
+  patrol/chase/attack loops with explicit transitions.
+- **BT** — prioritized decision-making re-evaluated continuously: target selection,
+  fallback chains, utility-style choices.
+- **Hybrid** — FSM on top for modes, a nested BT inside a state for the messy decisions.
+  Default to FSM; reach for BT when transition spaghetti appears.
+
 ---
 
-## 2. NodeCanvas API Rules (verified against official docs)
+## 2. NodeCanvas API Rules (verified against official NodeCanvas 3.x docs)
 
 - **Typed agent via generics**: `ActionTask<EnemyController>` makes `agent` strongly typed to
   that component and auto-requires it on the GameObject. (The old `[AgentType]` attribute is
@@ -167,6 +186,28 @@ public class IsTargetInRange : ConditionTask<EnemyController>
 }
 ```
 
+### Sensor Task (the only two-way adapter)
+
+```csharp
+using NodeCanvas.Framework;
+using ParadoxNotion.Design;
+using UnityEngine;
+
+[Category("MyGame/Enemy")]
+[Description("Reads the Body's perception and publishes the current target to the Blackboard.")]
+public class UpdateTargetSensor : ActionTask<EnemyPerception>
+{
+    [BlackboardOnly]
+    public BBParameter<Transform> outTarget;   // out-value: Task writes, graph reads
+
+    protected override void OnExecute()
+    {
+        outTarget.value = agent.CurrentTarget;  // Body stays NodeCanvas-free
+        EndAction(outTarget.value != null);
+    }
+}
+```
+
 ### C# ↔ FSM boundary (supplementary only)
 
 ```csharp
@@ -205,6 +246,10 @@ Assets/
   same namespace (`Game.Enemies.Tasks`).
 - `[Category]` mirrors the folder: `MyGame/Enemy`, `MyGame/GameFlow`.
 - Graph assets are content, like ScriptableObjects — designers own them.
+- **Asset graph (.asset) vs bound graph (embedded in prefab):** default to asset graphs —
+  shared across every instance of an enemy type, live in `AI/Graphs/`, diff-friendly.
+  Use a bound graph only for a one-off (a unique boss, a scripted scene sequence) where
+  the graph has no reuse value and belongs with the prefab.
 
 ---
 
