@@ -14,8 +14,7 @@ Personal Claude Code skills for reuse across machines.
 | `game-character-64` | Generate 64×64 pixel-art character spritesheets (8-direction, idle/walk/attack) for 2D games |
 | `initial-project-react` | Scaffold a React 19 + React Router v7 project (FSD-inspired feature modules, TanStack Query, Virtualisation) with `run.sh` and `CLAUDE.md` |
 | `initial-project-go` | Scaffold a Go 1.22 + Fiber v2 backend (clean architecture: handler → service → repository) with `CLAUDE.md` and `PROJECT_MANUAL.md` |
-| `game-feature-protocol` | Unity/C# adaptation of UFMP — build/refactor game features (combat, enemies, items, dungeon, run loop) with one-way dependencies, ScriptableObject data, and the run/meta loop split |
-| `unity-nodecanvas-fsm` | Hybrid OOP + NodeCanvas architecture — C# "Body" (data/physics/mechanics) + FSM/BT "Brain" (decisions/timing) bridged by Blackboard and thin ActionTask/ConditionTask hooks |
+| `game-feature-protocol` | Unity/C# adaptation of UFMP — build/refactor game features (combat, enemies, items, dungeon, run loop) with one-way dependencies, ScriptableObject data, and the run/meta loop split. Bundles the **`unity-nodecanvas-architecture`** companion: Body/Brain design + NodeCanvas 3.x implementation (FSM/BT, typed `ActionTask<T>`/`ConditionTask<T>`/Sensor Tasks, Blackboard, roguelike save, build roadmap) — with `references/task-templates.md` and a full worked example |
 
 ## Install on a new machine
 
