@@ -13,7 +13,7 @@ Personal Claude Code skills for reuse across machines.
 | `feature-modularization-protocol` | UFMP v3 — modularize complex React/TS features into scalable structures |
 | `game-character-64` | Generate 64×64 pixel-art character spritesheets (8-direction, idle/walk/attack) for 2D games |
 | `initial-project-react` | Scaffold a React 19 + React Router v7 project (FSD-inspired feature modules, TanStack Query, Virtualisation) with `run.sh` and `CLAUDE.md` |
-| `go-project` | Go Modularization Protocol (GMP) — refactor/design Go + Fiber backends into handler → service → repository layers with strict boundaries, smell → fix table and refactoring workflow |
+| `go-project` | Go Modularization Protocol (GMP) v2 — scaffold/refactor/review Go + Fiber v3 backends in handler → service → repository layers, uniform response envelope, constructor injection; shared infra lives in a separate `goutil` module (contract included). Bundles `references/scaffold.md` with templates for every bootstrap file |
 | `game-feature-protocol` | Unity/C# adaptation of UFMP — build/refactor game features (combat, enemies, items, dungeon, run loop) with one-way dependencies, ScriptableObject data, and the run/meta loop split. Bundles the **`unity-nodecanvas-architecture`** companion: Body/Brain design + NodeCanvas 3.x implementation (FSM/BT, typed `ActionTask<T>`/`ConditionTask<T>`/Sensor Tasks, Blackboard, roguelike save, build roadmap) — with `references/task-templates.md` and a full worked example |
 
 ## Install on a new machine
