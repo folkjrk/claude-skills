@@ -578,7 +578,7 @@ const (
 ## internal/data/orm/doc.go
 
 ```go
-// Package orm holds DB models, one file per resource (e.g. ticket.go).
+// Package orm holds the table models, one file per resource (e.g. ticket.go); db tags map the columns for sqlx.
 // Models never leave the service layer as JSON; services map them to XxxRes.
 package orm
 ```

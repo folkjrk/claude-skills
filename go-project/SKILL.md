@@ -155,6 +155,8 @@ func (h *ticketHandler) Get(c fiber.Ctx) error {
 - Translate driver errors to `domain.ErrNotFound` / `domain.ErrAlreadyExists`;
   Update/Delete affecting 0 rows → `domain.ErrNotFound`. Wrap the rest: `fmt.Errorf("find ticket %s: %w", id, err)`.
 - Repo files hold the interface and queries only. Stored record types live in `data/orm/` (DB) or `data/cache/` (Redis), even when interface and impl share one file.
+- Models in `data/orm/` map columns with `db:"..."` tags on every field; no ORM tags.
+- `data/orm/schema_test.go` compares the `db` tags with `scripts/db/schema.sql`; add every new table to it.
 - **Forbidden:** business rules, logging, calling other repos/services/HTTP, string-built queries, declaring stored record types.
 
 ### 5. Contracts (`*_svc.go`, `data/`)
