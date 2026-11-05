@@ -49,6 +49,7 @@ internal/
 │   ├── <resource>_repo_impl.go      # 🗄️ DATA: queries only
 │   └── <resource>_repo_mock.go      # 🎭 testify/mock
 ├── data/orm/<resource>.go           # 🧱 DB models (never serialized to clients)
+├── data/cache/<resource>.go         # 🧊 Redis records stored as JSON (no table, no gorm tags)
 ├── domain/errors.go                 # ⚠️ sentinels: ErrNotFound, ErrAlreadyExists, ...
 ├── meta/                            # ⚙️ error_codes.go, locals.go, cache keys, TTLs, permission keys
 └── config/config.go                 # 🔧 typed Config, Load() (only place reading env), Validate()
@@ -146,7 +147,8 @@ func (h *ticketHandler) Get(c fiber.Ctx) error {
 - ctx first; driver call uses it (`db.WithContext(ctx)`, `coll.FindOne(ctx, ...)`).
 - Translate driver errors to `domain.ErrNotFound` / `domain.ErrAlreadyExists`;
   Update/Delete affecting 0 rows → `domain.ErrNotFound`. Wrap the rest: `fmt.Errorf("find ticket %s: %w", id, err)`.
-- **Forbidden:** business rules, logging, calling other repos/services/HTTP, string-built queries.
+- Repo files hold the interface and queries only. Stored record types live in `data/orm/` (DB) or `data/cache/` (Redis), even when interface and impl share one file.
+- **Forbidden:** business rules, logging, calling other repos/services/HTTP, string-built queries, declaring stored record types.
 
 ### 5. Contracts (`*_svc.go`)
 - `XxxReq`: binding tags (`uri` / `query` / `json`) **and** `validate` tags; path fields `json:"-" uri:"id"`.
