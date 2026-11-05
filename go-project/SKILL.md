@@ -10,11 +10,11 @@ Two repositories:
 
 | Repo | Holds | Imports |
 |---|---|---|
-| **goutil** (separate git repo, own semver tags) | Reusable infra: `response`, `web`, `validation`, `logger`, `redisdb`, `envx`, later `postgresql`/`mongodb`/`httpclient` | stdlib + third-party only, **never** a service repo |
+| **goutil** (`github.com/folkjrk/utils`, local `~/Project/utils`, own semver tags) | Reusable infra: `response`, `web`, `validation`, `logger`, `redisdb`, `postgresql`, `queue`, `envx`, later `mongodb`/`httpclient` | stdlib + third-party only, **never** a service repo |
 | **service repo** (e.g. `dpp`) | One product: config, wiring, routes, handlers, services, repositories, models | goutil + third-party |
 
 Before scaffolding, read the goutil module path and version from the user's
-`go.mod` or ask once; templates write it as `{{UTIL}}` (e.g. `github.com/acme/goutil`).
+`go.mod` or ask once; templates write it as `{{UTIL}}` (e.g. `github.com/folkjrk/utils`).
 If goutil does not exist yet, keep the packages under `internal/util/` but write them
 to the **goutil contract** below so they can be moved out without edits.
 
@@ -41,15 +41,14 @@ internal/
 │   ├── middleware/middleware.go     # 🛡️ RequestID / AccessLog / Recovery / Auth for this binary
 │   ├── handler/<resource>_handler.go# 🌐 HTTP: bind → svc → .JSON(c)
 │   └── service/<resource>svc/
-│       ├── <resource>_svc.go        # 📜 CONTRACT: interface + Req/Res structs
-│       ├── <resource>_svc_impl.go   # 🧠 LOGIC
+│       ├── <resource>_svc.go        # 📜 CONTRACT + 🧠 LOGIC: interface, Req/Res structs, then impl
 │       └── <resource>_svc_test.go   # 🧪 table-driven, mocked repo
 ├── repository/<resource>repo/
 │   ├── <resource>_repo.go           # 📜 CONTRACT: interface
 │   ├── <resource>_repo_impl.go      # 🗄️ DATA: queries only
 │   └── <resource>_repo_mock.go      # 🎭 testify/mock
 ├── data/orm/<resource>.go           # 🧱 DB models (never serialized to clients)
-├── data/cache/<resource>.go         # 🧊 Redis records stored as JSON (no table, no gorm tags)
+├── data/cache/<resource>.go         # 🧊 Redis records stored as JSON (no table)
 ├── domain/errors.go                 # ⚠️ sentinels: ErrNotFound, ErrAlreadyExists, ...
 ├── meta/                            # ⚙️ error_codes.go, locals.go, cache keys, TTLs, permission keys
 └── config/config.go                 # 🔧 typed Config, Load() (only place reading env), Validate()
@@ -88,7 +87,9 @@ Expected packages and surface:
 | `web` | `HTTPHandler{ Init(fiber.Router) }`, `Register(router, ...HTTPHandler)` |
 | `validation` | `Validator{ Check(any) []response.Detail }`; field names from `json` → `uri` → `query` tag |
 | `logger` | `New(Options) *slog.Logger` (JSON default, TEXT option), error attr with stack trace |
-| `redisdb` | `Cache{ Get/Set/Delete/DeletePrefix(ctx, ...) }`, `New`, `NewMemory`, `Close`, fiber `Storage` adapter |
+| `redisdb` | `Cache{ Get/Set/Delete/DeletePrefix(ctx, ...) }`, `New`, `NewMemory`, `Close`, fiber `Storage` adapter, `RedisPub`/`RedisSub` |
+| `postgresql` | sqlx + `lib/pq`: `InitDatabase(Options)`, `CloseDatabase`, `PosgresqlDB{ GetContext/SelectContext/ExecContext/ExecTx }`, sqlmock helper `InitDatabaseMock` |
+| `queue` | `PublishReq`, `Notification`, `QueueHandler` |
 | `envx` | typed env getters with defaults |
 
 ## Response Envelope
@@ -96,14 +97,16 @@ Expected packages and surface:
 The API spec in `docs/` wins. Default (matches DESIGN_SPECS §1.1/§1.2):
 
 ```json
-{ "success": true,  "message": "OK", "data": { } }
-{ "success": false, "message": "Validation failed",
-  "error": { "code": "VALIDATION_ERROR", "details": [ { "field": "email", "reason": "email must be email format" } ] } }
+{ "success": true,  "statusCode": 200, "message": "OK", "data": { } }
+{ "success": false, "statusCode": 400, "message": "Validation failed", "requestId": "e9589952-...",
+  "validationErrors": { "email": "email must be email format" },
+  "error": { "code": "VALIDATION_ERROR" } }
 ```
 
-- HTTP status is the status line, not a body field. Error `code` constants live in
-  `meta/error_codes.go` (`BAD_REQUEST`, `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`,
-  `NOT_FOUND`, `CONFLICT`, `PAYLOAD_TOO_LARGE`, `INTERNAL_ERROR`, plus domain codes).
+- `statusCode` is required in every body and equals the HTTP status. Every error body carries `requestId` (same as `X-Request-ID`).
+  Default `code` constants live in goutil `response`, domain codes in `meta/error_codes.go`
+  (`BAD_REQUEST`, `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`,
+  `NOT_FOUND`, `CONFLICT`, `FILE_SIZE_EXCEEDED`, `INTERNAL_ERROR`). Set a specific code with `.WithCode(...)`.
 - The internal cause is a non-serialized field, put in `c.Locals(meta.LocalErr)` for the access log.
 - 5xx `message` is always generic; never echo `err.Error()` to clients.
 - `fiber.Config{ErrorHandler: response.ErrorHandler}` is mandatory, so 404/405,
@@ -115,7 +118,8 @@ The API spec in `docs/` wins. Default (matches DESIGN_SPECS §1.1/§1.2):
 - Files `snake_case.go`; packages lowercase; service packages end `svc` (`ticketsvc`),
   repository packages end `repo` (`ticketrepo`).
 - Constructors `New(...)` return the **interface**: `func New(repo ticketrepo.Repo, cache redisdb.Cache, v validation.Validator) Svc`.
-- A resource with ≤ 2 trivial methods may keep interface and impl in one file.
+- A service keeps interface, Req/Res and impl in one `<resource>_svc.go`, contract at the top.
+- A repository with ≤ 2 trivial methods may keep interface and impl in one file.
 
 ### 2. Handler (`handler/`)
 - Implements `web.HTTPHandler`; registers its own routes in `Init`.
@@ -144,13 +148,15 @@ func (h *ticketHandler) Get(c fiber.Ctx) error {
 - **Forbidden:** `fiber.Ctx`, `os.Getenv`, constructing its own dependencies, package-level state.
 
 ### 4. Repository (`repository/`)
-- ctx first; driver call uses it (`db.WithContext(ctx)`, `coll.FindOne(ctx, ...)`).
+- ctx first; driver call uses it (`db.GetContext(ctx, ...)`, `db.ExecContext(ctx, ...)`, `coll.FindOne(ctx, ...)`). Postgres is plain SQL through goutil `postgresql` (sqlx), no ORM; `$1` placeholders.
+- Pass an empty JSONB value as `nil`, not an empty `json.RawMessage`.
 - Translate driver errors to `domain.ErrNotFound` / `domain.ErrAlreadyExists`;
   Update/Delete affecting 0 rows → `domain.ErrNotFound`. Wrap the rest: `fmt.Errorf("find ticket %s: %w", id, err)`.
 - Repo files hold the interface and queries only. Stored record types live in `data/orm/` (DB) or `data/cache/` (Redis), even when interface and impl share one file.
 - **Forbidden:** business rules, logging, calling other repos/services/HTTP, string-built queries, declaring stored record types.
 
 ### 5. Contracts (`*_svc.go`)
+- `Svc` interface lives here with `XxxReq`/`XxxRes`, in the service package. Do not redeclare it in the handler: the handler imports `XxxReq`/`XxxRes` from this package anyway, so a consumer-side copy removes no dependency.
 - `XxxReq`: binding tags (`uri` / `query` / `json`) **and** `validate` tags; path fields `json:"-" uri:"id"`.
 - `XxxRes`: explicit camelCase `json` tags; only fields the client needs.
 
@@ -176,13 +182,14 @@ func (h *ticketHandler) Get(c fiber.Ctx) error {
 | Config | `os.Getenv` only via `envx` in `config/`; `Load() (*Config, error)`; fail fast in `Validate()`; only fields the product uses — no copy-pasted blocks |
 | Logging | `slog` (`slog.InfoContext/ErrorContext`) configured once by `logger.New`; log at middleware boundary + business events; repos silent; never secrets/PII/response bodies |
 | Concurrency | Every goroutine has a cancel path via ctx; `errgroup` for fan-out |
+| Multi-instance | In-process state (SSE clients, counters) is per instance. Cross instances with Redis pub/sub; the DB stays the source of truth and messages carry IDs only, never personal data |
 | Globals | No `sync.Once` singletons or package-level clients/config — `slog.SetDefault` is the one allowed global |
 | Constants | Error codes, Locals keys, cache keys, TTLs in `meta/` — never string literals like `c.Locals("err")` |
 
 ## Testing Strategy
 - **Service:** table-driven with `<resource>_repo_mock.go` + `redisdb.NewMemory()`; assert status, error code, `repo.AssertExpectations(t)`.
-- **Route:** `New(testDeps()).app.Test(...)` — health, 404 envelope, panic → 500 envelope, docs hidden in prod, CORS.
-- **Repository:** integration tests against docker-compose DB, build tag `integration`.
+- **Route:** `New(testDeps()).app.Test(...)` — health, 404 envelope, panic → 500 envelope, docs hidden in prod, CORS. Body limit needs a real listener: `app.Test` returns fasthttp's `ErrBodyTooLarge`, not the 413 response.
+- **Repository:** unit tests with `postgresql.InitDatabaseMock()` (sqlmock); integration tests against docker-compose DB, build tag `integration`. sqlmock runs no SQL, so JSONB and NULL handling need the real DB.
 - `make vet test` green (`go test -race -count=1 ./...`); ≥ 80% on services.
 
 ## Security Checklist
@@ -208,7 +215,7 @@ func (h *ticketHandler) Get(c fiber.Ctx) error {
 | `response.Success(data, "msg")` logging the payload | Return the envelope; log events, not bodies |
 | Aggregate `repository.Init()` with commented-out repos | Per-resource repo packages wired in `app.go` |
 | Config fields for systems the product doesn't use | Delete; add when the integration lands |
-| `err == redis.Nil` / `gorm.ErrRecordNotFound` in service | Repo returns `domain.ErrNotFound` |
+| `err == redis.Nil` / `sql.ErrNoRows` in service | Repo returns `domain.ErrNotFound` |
 | ORM struct returned as JSON | `XxxRes` + `toXxxRes` |
 
 ## Workflows
@@ -224,7 +231,7 @@ func (h *ticketHandler) Get(c fiber.Ctx) error {
 5. Add the first resource with the steps below.
 
 **New resource:** meta codes/keys + domain sentinels → orm model → repo (interface, impl, mock)
-→ svc contract (Req/Res) → svc impl → svc tests → handler with swag annotations
+→ svc (contract, then impl, in one file) → svc tests → handler with swag annotations
 → add svc to `route.Deps`, construct in `app.go`, register in public/private group → `make swag fmt vet test`.
 
 **Refactor / review:** survey against Smell → Fix; if the project has a consistent different

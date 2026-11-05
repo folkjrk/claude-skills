@@ -549,14 +549,14 @@ package meta
 
 // Machine-readable error.code values (API spec in docs/).
 const (
-	ErrCodeBadRequest      = "BAD_REQUEST"
-	ErrCodeValidation      = "VALIDATION_ERROR"
-	ErrCodeUnauthorized    = "UNAUTHORIZED"
-	ErrCodeForbidden       = "FORBIDDEN"
-	ErrCodeNotFound        = "NOT_FOUND"
-	ErrCodeConflict        = "CONFLICT"
-	ErrCodePayloadTooLarge = "PAYLOAD_TOO_LARGE"
-	ErrCodeInternal        = "INTERNAL_ERROR"
+	ErrCodeBadRequest       = "BAD_REQUEST"
+	ErrCodeValidation       = "VALIDATION_ERROR"
+	ErrCodeUnauthorized     = "UNAUTHORIZED"
+	ErrCodeForbidden        = "FORBIDDEN"
+	ErrCodeNotFound         = "NOT_FOUND"
+	ErrCodeConflict         = "CONFLICT"
+	ErrCodeFileSizeExceeded = "FILE_SIZE_EXCEEDED"
+	ErrCodeInternal         = "INTERNAL_ERROR"
 )
 ```
 
