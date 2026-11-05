@@ -41,12 +41,13 @@ internal/
 │   ├── middleware/middleware.go     # 🛡️ RequestID / AccessLog / Recovery / Auth for this binary
 │   ├── handler/<resource>_handler.go# 🌐 HTTP: bind → svc → .JSON(c)
 │   └── service/<resource>svc/
-│       ├── <resource>_svc.go        # 📜 CONTRACT + 🧠 LOGIC: interface, Req/Res structs, then impl
+│       ├── <resource>_svc.go        # 📜 CONTRACT + 🧠 LOGIC: interface, then impl
 │       └── <resource>_svc_test.go   # 🧪 table-driven, mocked repo
 ├── repository/<resource>repo/
 │   ├── <resource>_repo.go           # 📜 CONTRACT: interface
 │   ├── <resource>_repo_impl.go      # 🗄️ DATA: queries only
 │   └── <resource>_repo_mock.go      # 🎭 testify/mock
+├── data/<resource>.go               # 📦 DTOs: Req/Res structs of the services
 ├── data/orm/<resource>.go           # 🧱 DB models (never serialized to clients)
 ├── data/cache/<resource>.go         # 🧊 Redis records stored as JSON (no table)
 ├── domain/errors.go                 # ⚠️ sentinels: ErrNotFound, ErrAlreadyExists, ...
@@ -118,7 +119,8 @@ The API spec in `docs/` wins. Default (matches DESIGN_SPECS §1.1/§1.2):
 - Files `snake_case.go`; packages lowercase; service packages end `svc` (`ticketsvc`),
   repository packages end `repo` (`ticketrepo`).
 - Constructors `New(...)` return the **interface**: `func New(repo ticketrepo.Repo, cache redisdb.Cache, v validation.Validator) Svc`.
-- A service keeps interface, Req/Res and impl in one `<resource>_svc.go`, contract at the top.
+- A service keeps interface and impl in one `<resource>_svc.go`, contract at the top; its Req/Res live in `data/<resource>.go`.
+- DTOs are named `<Resource><Action>Req` / `Res` (`data.TicketCreateReq`), because `package data` is shared by every resource.
 - A repository with ≤ 2 trivial methods may keep interface and impl in one file.
 
 ### 2. Handler (`handler/`)
@@ -131,7 +133,7 @@ The API spec in `docs/` wins. Default (matches DESIGN_SPECS §1.1/§1.2):
 
 ```go
 func (h *ticketHandler) Get(c fiber.Ctx) error {
-	var req ticketsvc.GetReq
+	var req data.TicketGetReq
 	if err := c.Bind().URI(&req); err != nil {
 		return response.BadRequest[any]("invalid request").JSON(c)
 	}
@@ -155,10 +157,12 @@ func (h *ticketHandler) Get(c fiber.Ctx) error {
 - Repo files hold the interface and queries only. Stored record types live in `data/orm/` (DB) or `data/cache/` (Redis), even when interface and impl share one file.
 - **Forbidden:** business rules, logging, calling other repos/services/HTTP, string-built queries, declaring stored record types.
 
-### 5. Contracts (`*_svc.go`)
-- `Svc` interface lives here with `XxxReq`/`XxxRes`, in the service package. Do not redeclare it in the handler: the handler imports `XxxReq`/`XxxRes` from this package anyway, so a consumer-side copy removes no dependency.
+### 5. Contracts (`*_svc.go`, `data/`)
+- `Svc` interface lives in the service package; `XxxReq`/`XxxRes` live in `data/<resource>.go`. Do not redeclare `Svc` in the handler: `route.Deps` needs the shared type anyway, so a consumer-side copy removes no dependency.
+- Types that never leave the service (JWT claims, `Options`) stay in the service package.
 - `XxxReq`: binding tags (`uri` / `query` / `json`) **and** `validate` tags; path fields `json:"-" uri:"id"`.
 - `XxxRes`: explicit camelCase `json` tags; only fields the client needs.
+- Swag: `example` on `swaggertype:"object"` is an error and swag drops the whole struct from the spec. Use `swaggertype:"object,string"` with `example:"key:value"`.
 
 ### 6. Wiring (`app.go`) and Routes (`route.go`)
 - `Run() error` — returns instead of exiting so defers run; `main` only maps error → exit code.
@@ -231,7 +235,7 @@ func (h *ticketHandler) Get(c fiber.Ctx) error {
 5. Add the first resource with the steps below.
 
 **New resource:** meta codes/keys + domain sentinels → orm model → repo (interface, impl, mock)
-→ svc (contract, then impl, in one file) → svc tests → handler with swag annotations
+→ `data/<resource>.go` Req/Res → svc (contract, then impl, in one file) → svc tests → handler with swag annotations
 → add svc to `route.Deps`, construct in `app.go`, register in public/private group → `make swag fmt vet test`.
 
 **Refactor / review:** survey against Smell → Fix; if the project has a consistent different
